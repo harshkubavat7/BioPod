@@ -1,9 +1,9 @@
 # Environment Variables (NEVER commit these!)
-.env
-.env.local
-.env.*.local
-.env.production.local
-.env.development.local
+# .env
+# .env.local
+# .env.*.local
+# .env.production.local
+# .env.development.local
 
 # Node modules (too large, reinstall with npm install)
 node_modules/
