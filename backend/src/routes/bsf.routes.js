@@ -1,359 +1,225 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- * 🐝 BSF-SPECIFIC ROUTES - bsf.routes.js
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * File: backend/src/routes/bsf.routes.js
- * Purpose: API endpoints for BSF monitoring system
- * 
- * This file handles:
- * - Getting sensor data
- * - Getting device status
- * - Manual control commands
- * - Settings management
- * 
- * ═══════════════════════════════════════════════════════════════════════════
- */
-
 const express = require('express');
 const router = express.Router();
 const bsfService = require('../services/bsf.service');
 
-// ═══════════════════════════════════════════════════════════════════════════
-// GET LATEST SENSOR READINGS
-// ═══════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
+// GET - Current Sensor Data
+// GET /api/bsf/current
+// ═════════════════════════════════════════════════════════════════════════════
 
-/**
- * GET /api/bsf/readings/latest
- * 
- * Returns: Latest readings from all sensors
- * 
- * Response:
- * {
- *   "device": "BSF_001",
- *   "timestamp": 1234567890,
- *   "temperature": 28.5,
- *   "humidity": 65.3,
- *   "airQuality": 1750,
- *   "fanState": "ON",
- *   "fanMode": "AUTO"
- * }
- */
-
-router.get('/readings/latest', async (req, res) => {
+router.get('/current', async (req, res) => {
   try {
-    const readings = await bsfService.getLatestReadings();
+    const deviceId = req.query.device_id || 'BSF_001';
+    const data = await bsfService.getCurrentData(deviceId);
     
     res.json({
-      status: 'ok',
-      data: readings,
+      success: true,
+      data: data,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('[BSF Routes] Error fetching latest readings:', error);
+    console.error('[BSF Routes] ❌ Error:', error.message);
     res.status(500).json({
-      status: 'error',
+      success: false,
       error: error.message
     });
   }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// GET READINGS IN TIME RANGE
-// ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * GET /api/bsf/readings?from=2025-12-27&to=2025-12-28
- * 
- * Query Parameters:
- *   - from: Start date (ISO format) - optional
- *   - to: End date (ISO format) - optional
- *   - limit: Number of records (default: 100)
- * 
- * Returns: Array of readings in time range
- */
+// ═════════════════════════════════════════════════════════════════════════════
+// GET - Sensor History
+// GET /api/bsf/history?sensor_type=temperature&hours=24
+// ═════════════════════════════════════════════════════════════════════════════
 
-router.get('/readings', async (req, res) => {
+router.get('/history', async (req, res) => {
   try {
-    const { from, to, limit } = req.query;
+    const deviceId = req.query.device_id || 'BSF_001';
+    const sensorType = req.query.sensor_type;
+    const hours = parseInt(req.query.hours) || 24;
     
-    const readings = await bsfService.getReadingsInRange(
-      from ? new Date(from) : null,
-      to ? new Date(to) : null,
-      parseInt(limit) || 100
-    );
-
-    res.json({
-      status: 'ok',
-      count: readings.length,
-      data: readings
-    });
-  } catch (error) {
-    console.error('[BSF Routes] Error fetching readings:', error);
-    res.status(500).json({
-      status: 'error',
-      error: error.message
-    });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// GET DEVICE STATUS
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * GET /api/bsf/device/status
- * 
- * Returns: Current device status and statistics
- * 
- * Response:
- * {
- *   "deviceId": "BSF_001",
- *   "online": true,
- *   "lastUpdate": "2025-12-27T19:00:00Z",
- *   "fanMode": "AUTO",
- *   "fanState": "ON",
- *   "uptime": 3600000,
- *   "stats": {
- *     "avgTemp": 28.2,
- *     "avgHumidity": 64.5,
- *     "maxAirQuality": 1850,
- *     "minAirQuality": 1200
- *   }
- * }
- */
-
-router.get('/device/status', async (req, res) => {
-  try {
-    const status = await bsfService.getDeviceStatus();
-
-    res.json({
-      status: 'ok',
-      data: status
-    });
-  } catch (error) {
-    console.error('[BSF Routes] Error fetching device status:', error);
-    res.status(500).json({
-      status: 'error',
-      error: error.message
-    });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SEND FAN CONTROL COMMAND
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * POST /api/bsf/control/fan
- * 
- * Body:
- * {
- *   "command": "ON"  // or "OFF" or "AUTO"
- * }
- * 
- * Valid commands:
- *   - "ON": Turn fan on manually (5-min timeout)
- *   - "OFF": Turn fan off manually (5-min timeout)
- *   - "AUTO": Return to auto mode
- * 
- * Returns: Confirmation
- */
-
-router.post('/control/fan', async (req, res) => {
-  try {
-    const { command } = req.body;
-
-    // Validate command
-    const validCommands = ['ON', 'OFF', 'AUTO'];
-    if (!validCommands.includes(command)) {
+    if (!sensorType) {
       return res.status(400).json({
-        status: 'error',
-        error: `Invalid command. Must be one of: ${validCommands.join(', ')}`
+        success: false,
+        error: 'sensor_type is required'
       });
     }
-
-    // Send command via MQTT
-    const result = await bsfService.sendFanControl(command);
-
-    // Log event
-    await bsfService.logEvent({
-      type: 'CONTROL',
-      action: 'FAN_COMMAND',
-      command: command,
-      timestamp: new Date()
-    });
-
+    
+    const history = await bsfService.getSensorHistory(deviceId, sensorType, hours);
+    
     res.json({
-      status: 'ok',
-      message: `Fan control command sent: ${command}`,
-      command: command
+      success: true,
+      data: history
     });
   } catch (error) {
-    console.error('[BSF Routes] Error sending fan control:', error);
+    console.error('[BSF Routes] ❌ Error:', error.message);
     res.status(500).json({
-      status: 'error',
+      success: false,
       error: error.message
     });
   }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// UPDATE THRESHOLD SETTINGS
-// ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * POST /api/bsf/settings/thresholds
- * 
- * Body:
- * {
- *   "mq_high": 1800,
- *   "mq_low": 1600
- * }
- * 
- * Updates the MQ135 thresholds for fan control
- */
+// ═════════════════════════════════════════════════════════════════════════════
+// GET - Statistics
+// GET /api/bsf/statistics?hours=24
+// ═════════════════════════════════════════════════════════════════════════════
 
-router.post('/settings/thresholds', async (req, res) => {
+router.get('/statistics', async (req, res) => {
   try {
-    const { mq_high, mq_low } = req.body;
-
-    // Validate values
-    if (typeof mq_high !== 'number' || typeof mq_low !== 'number') {
-      return res.status(400).json({
-        status: 'error',
-        error: 'mq_high and mq_low must be numbers'
-      });
-    }
-
-    if (mq_high <= mq_low) {
-      return res.status(400).json({
-        status: 'error',
-        error: 'mq_high must be greater than mq_low'
-      });
-    }
-
-    // Update settings
-    const settings = await bsfService.updateThresholds(mq_high, mq_low);
-
-    // Send to Arduino via MQTT
-    await bsfService.sendThresholdUpdate({
-      mq_high: mq_high,
-      mq_low: mq_low
-    });
-
-    // Log event
-    await bsfService.logEvent({
-      type: 'SETTINGS',
-      action: 'THRESHOLD_UPDATE',
-      mq_high: mq_high,
-      mq_low: mq_low,
-      timestamp: new Date()
-    });
-
+    const deviceId = req.query.device_id || 'BSF_001';
+    const hours = parseInt(req.query.hours) || 24;
+    
+    const stats = await bsfService.getStatistics(deviceId, hours);
+    
     res.json({
-      status: 'ok',
-      message: 'Thresholds updated',
-      settings: settings
-    });
-  } catch (error) {
-    console.error('[BSF Routes] Error updating thresholds:', error);
-    res.status(500).json({
-      status: 'error',
-      error: error.message
-    });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// GET STATISTICS
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * GET /api/bsf/stats?days=7
- * 
- * Query Parameters:
- *   - days: Number of days to analyze (default: 7)
- * 
- * Returns: Statistics for the specified period
- */
-
-router.get('/stats', async (req, res) => {
-  try {
-    const days = parseInt(req.query.days) || 7;
-
-    const stats = await bsfService.getStatistics(days);
-
-    res.json({
-      status: 'ok',
-      period_days: days,
+      success: true,
       data: stats
     });
   } catch (error) {
-    console.error('[BSF Routes] Error fetching statistics:', error);
+    console.error('[BSF Routes] ❌ Error:', error.message);
     res.status(500).json({
-      status: 'error',
+      success: false,
       error: error.message
     });
   }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// GET EVENTS LOG
-// ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * GET /api/bsf/events?limit=50
- * 
- * Returns: Recent events (control commands, alerts, etc.)
- */
+// ═════════════════════════════════════════════════════════════════════════════
+// GET - Configuration
+// GET /api/bsf/config
+// ═════════════════════════════════════════════════════════════════════════════
+
+router.get('/config', async (req, res) => {
+  try {
+    const deviceId = req.query.device_id || 'BSF_001';
+    const config = await bsfService.getConfig(deviceId);
+    
+    res.json({
+      success: true,
+      data: config
+    });
+  } catch (error) {
+    console.error('[BSF Routes] ❌ Error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PUT - Update Configuration
+// PUT /api/bsf/config
+// Body: { "thresholds": { "mq_high": 1800, "mq_low": 1600 } }
+// ═════════════════════════════════════════════════════════════════════════════
+
+router.put('/config', async (req, res) => {
+  try {
+    const deviceId = req.query.device_id || 'BSF_001';
+    const updates = req.body;
+    
+    const config = await bsfService.updateConfig(deviceId, updates);
+    
+    res.json({
+      success: true,
+      message: 'Config updated',
+      data: config
+    });
+  } catch (error) {
+    console.error('[BSF Routes] ❌ Error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// POST - Fan Control Command
+// POST /api/bsf/control/fan
+// Body: { "command": "ON|OFF|AUTO" }
+// ═════════════════════════════════════════════════════════════════════════════
+
+router.post('/control/fan', async (req, res) => {
+  try {
+    const deviceId = req.query.device_id || 'BSF_001';
+    const { command } = req.body;
+    
+    if (!['ON', 'OFF', 'AUTO'].includes(command)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid command. Use: ON, OFF, or AUTO'
+      });
+    }
+    
+    // Send command via MQTT
+    await bsfService.sendFanControl(deviceId, command);
+    
+    // Log event
+    await bsfService.logEvent(deviceId, `manual_${command.toLowerCase()}`, {
+      command: command
+    }, 'api');
+    
+    res.json({
+      success: true,
+      message: `Fan command sent: ${command}`,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[BSF Routes] ❌ Error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// GET - Events Log
+// GET /api/bsf/events?limit=50
+// ═════════════════════════════════════════════════════════════════════════════
 
 router.get('/events', async (req, res) => {
   try {
+    const deviceId = req.query.device_id || 'BSF_001';
     const limit = parseInt(req.query.limit) || 50;
-
-    const events = await bsfService.getEvents(limit);
-
+    
+    const { BsfEvent } = require('../models/bsf.model');
+    const events = await BsfEvent.find({ device_id: deviceId })
+      .sort({ timestamp: -1 })
+      .limit(limit);
+    
     res.json({
-      status: 'ok',
+      success: true,
       count: events.length,
       data: events
     });
   } catch (error) {
-    console.error('[BSF Routes] Error fetching events:', error);
+    console.error('[BSF Routes] ❌ Error:', error.message);
     res.status(500).json({
-      status: 'error',
+      success: false,
       error: error.message
     });
   }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
+
+// ═════════════════════════════════════════════════════════════════════════════
 // ERROR HANDLER
-// ═══════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
 
 router.use((err, req, res, next) => {
-  console.error('[BSF Routes] Unhandled error:', err);
+  console.error('[BSF Routes] ❌ Unhandled error:', err.message);
   res.status(500).json({
-    status: 'error',
+    success: false,
     error: 'Internal server error'
   });
 });
 
 module.exports = router;
-
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- * IMPORT IN SERVER.JS
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * Add to backend/src/server.js:
- * 
- * const bsfRoutes = require('./routes/bsf.routes');
- * 
- * Then in the ROUTES section:
- * 
- * app.use('/api/bsf', bsfRoutes);
- * 
- * ═══════════════════════════════════════════════════════════════════════════
- */

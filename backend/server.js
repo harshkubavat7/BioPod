@@ -1,38 +1,28 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- * 🚀 BACKEND SERVER - FINAL PRODUCTION VERSION
- * ═══════════════════════════════════════════════════════════════════════════
- * 
- * File: backend/server.js
- * Purpose: Main Express server with MongoDB, MQTT, WebSocket
- * 
- * ✅ ALL PATHS CORRECTED FOR backend/server.js LOCATION
- * 
- * ═══════════════════════════════════════════════════════════════════════════
- */
-
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
 const socketIo = require('socket.io');
 
-// ✅ PATHS: From backend/server.js looking INTO src/
+// ✅ CORRECTED IMPORTS
 const { connectDB, createIndexes, closeDB } = require('./src/config/db');
-const { connectMQTT, closeMQTT } = require('./src/config/mqtt');
-const { initMQTTHandlers } = require('./src/handlers/mqtt.handler');
+const { connectMQTT } = require('./src/config/mqtt');
+const {
+  initializeCollections,
+  initializeBsfHandlers,
+  initMQTTHandlers
+} = require('./src/handlers/mqtt.handler');
 const sensorRoutes = require('./src/routes/sensors');
 const bsfRoutes = require('./src/routes/bsf.routes');
-const dbConfig = require('./src/config/db');
 
-
-// Load environment variables from backend/.env
+// Load environment variables
 dotenv.config();
 
 const PORT = process.env.PORT || 5000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
 const mongoUri = process.env.MONGO_URI;
+
 // Initialize Express app
 const app = express();
 
@@ -116,14 +106,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// Broadcast helper
-function broadcastSensorData(data) {
-  io.emit('sensor-reading', {
-    timestamp: new Date().toISOString(),
-    data
-  });
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN SERVER START FUNCTION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -141,7 +123,7 @@ async function startServer() {
     console.log('🔌 Attempting MongoDB connection...');
     console.log(`📍 MONGO_URI: ${process.env.MONGO_URI ? '✅ SET' : '❌ NOT SET'}`);
 
-    const db = await dbConfig.connectDB(mongoUri);
+    const db = await connectDB(mongoUri);
 
     console.log('✅ MongoDB connected successfully!');
     console.log('📚 Database: biopod_database');
@@ -155,7 +137,7 @@ async function startServer() {
     await createIndexes(db);
 
     // ─────────────────────────────────────────────────────────────────────
-    // PHASE 3: MQTT CONNECTION
+    // PHASE 3: MQTT CONNECTION & INITIALIZATION
     // ─────────────────────────────────────────────────────────────────────
 
     console.log('');
@@ -163,15 +145,25 @@ async function startServer() {
     console.log('🔌 MQTT CONNECTION CHECK');
     console.log('═══════════════════════════════════════════════════════════');
 
-    try {
-      await connectMQTT();
-      initMQTTHandlers();
-      console.log('═══════════════════════════════════════════════════════════');
-    } catch (mqttError) {
-      console.error('[MQTT] ❌ MQTT Connection Failed:', mqttError.message);
-      console.log('⚠️  Continuing without MQTT...');
-      console.log('═══════════════════════════════════════════════════════════');
+    let mqttClient;
+
+    if (process.env.ENABLE_MQTT !== 'false') {
+      try {
+        mqttClient = await connectMQTT();
+        
+        console.log('[MQTT BSF] Initializing handlers...');
+        
+        await initializeCollections();
+        initializeBsfHandlers(mqttClient);
+        initMQTTHandlers();
+        
+      } catch (error) {
+        console.error('[MQTT] ❌ MQTT Connection Failed:', error.message);
+        console.warn('⚠️  Continuing without MQTT...');
+      }
     }
+
+    console.log('═══════════════════════════════════════════════════════════');
 
     // ─────────────────────────────────────────────────────────────────────
     // PHASE 4: MOUNT API ROUTES
@@ -191,7 +183,7 @@ async function startServer() {
     console.log('═══════════════════════════════════════════════════════════');
 
     // ─────────────────────────────────────────────────────────────────────
-    // PHASE 5: ERROR HANDLERS (Must be last middleware)
+    // PHASE 5: ERROR HANDLERS
     // ─────────────────────────────────────────────────────────────────────
 
     // 404 handler
@@ -266,14 +258,6 @@ async function gracefulShutdown() {
     });
   }
 
-  // Close MQTT
-  try {
-    await closeMQTT();
-    console.log('[MQTT] ✅ MQTT connection closed');
-  } catch (error) {
-    console.error('[MQTT] Error closing connection:', error.message);
-  }
-
   // Close Database
   try {
     await closeDB();
@@ -318,6 +302,5 @@ module.exports = {
   server,
   io,
   startServer,
-  gracefulShutdown,
-  broadcastSensorData
+  gracefulShutdown
 };
