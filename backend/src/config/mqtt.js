@@ -402,14 +402,33 @@ async function connectMQTT() {
             }
           });
         });
-
         resolve(mqttClient);
       });
 
+      
+
+      // mqttClient.on('message', (topic, message) => {
+      //   console.log('[MQTT] Message on topic: ' + topic);
+      //   console.log('[MQTT] Payload: ' + message.toString());
+      // });
+
       mqttClient.on('message', (topic, message) => {
-        console.log('[MQTT] Message on topic: ' + topic);
-        console.log('[MQTT] Payload: ' + message.toString());
-      });
+  console.log('[MQTT] Message on topic: ' + topic);
+  console.log('[MQTT] Payload: ' + message.toString());
+  
+  // Handle fan control commands from chatbot
+  if (topic === 'biopod/bsf/control/fan') {
+    try {
+      const payload = JSON.parse(message.toString());
+      console.log('[MQTT Handler] 🎛️  Fan Control Command:', payload);
+      
+      handleFanControl(payload);
+    } catch (err) {
+      console.error('[MQTT Handler] Error parsing fan control:', err);
+    }
+  }
+});
+
 
       mqttClient.on('error', (error) => {
         console.error('[MQTT] ❌ Connection error:', error.message);
@@ -435,6 +454,8 @@ async function connectMQTT() {
   });
 }
 
+
+
 /**
  * Get MQTT Client Instance
  */
@@ -458,9 +479,71 @@ async function closeMQTT() {
   });
 }
 
+
+/**
+ * Handle fan control from chatbot
+ */
+// async function handleFanControl(payload) {
+//   try {
+//     const { device, state, mode, timestamp } = payload;
+    
+//     console.log(`[MQTT Handler] 💾 Saving fan control: ${device} -> ${state}`);
+    
+//     // Get database connection
+//     const { getDB } = require('./db');
+//     const database = await getDB();
+    
+//     // Save to control_logs
+//     await database.collection('control_logs').insertOne({
+//       device: device || 'BSF_001',
+//       type: 'fan_control',
+//       state: state,
+//       mode: mode || 'MANUAL',
+//       timestamp: new Date(timestamp || Date.now()),
+//       source: 'chatbot',
+//       saved_at: new Date()
+//     });
+    
+//     console.log('[MQTT Handler] ✅ Fan control saved to database');
+    
+//   } catch (error) {
+//     console.error('[MQTT Handler] Error handling fan control:', error.message);
+//   }
+// }
+
+
+async function handleFanControl(payload) {
+  try {
+    const { device, state, mode, timestamp } = payload;
+    
+    console.log(`[MQTT Handler] 🎛️  Fan Control: ${device} -> ${state} (${mode})`);
+    
+    const { getDB } = require('./db');
+    const database = await getDB();
+    
+    // Save to control_logs
+    await database.collection('control_logs').insertOne({
+      device: device || 'BSF_001',
+      type: 'fan_control',
+      state: state,
+      mode: mode || 'MANUAL',
+      timestamp: new Date(timestamp || Date.now()),
+      source: 'chatbot',
+      saved_at: new Date()
+    });
+    
+    console.log('[MQTT Handler] ✅ Fan control saved to database');
+    
+  } catch (error) {
+    console.error('[MQTT Handler] Error handling fan control:', error.message);
+  }
+}
+
+
 module.exports = {
   connectMQTT,
   getMqttClient,
   closeMQTT,
-  MQTT_TOPICS
+  MQTT_TOPICS,
+  handleFanControl
 };

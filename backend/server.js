@@ -38,6 +38,29 @@ const io = socketIo(server, {
   }
 });
 
+// Add this BEFORE your routes
+app.use(cors({
+  origin: 'http://localhost:3000',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+}));
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+const AutoPredictorService = require('./src/services/auto-predictor');
+const AlertService = require('./src/services/alert-service');
+
+const chatbotRoutes = require('./src/routes/chatbot');
+app.use('/api/chatbot', chatbotRoutes);
+
+// Add these routes BEFORE the error handling middleware
+const alertRoutes = require('./src/routes/alerts');
+// const chatbotRoutes = require('./src/routes/chatbot');
+
+app.use('/api/alerts', alertRoutes);
+// app.use('/api/chatbot', chatbotRoutes);
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MIDDLEWARE CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -164,6 +187,12 @@ async function startServer() {
     }
 
     console.log('═══════════════════════════════════════════════════════════');
+
+    // After database is connected:
+    AutoPredictorService.startAutoPredictor();
+    AlertService.initializeEmail();
+
+console.log('[Server] ✅ Auto-prediction scheduler started');
 
     // ─────────────────────────────────────────────────────────────────────
     // PHASE 4: MOUNT API ROUTES
