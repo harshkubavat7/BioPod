@@ -337,6 +337,7 @@ function initializeBsfHandlers(mqttClient) {
     try {
       const payload = JSON.parse(message.toString());
 
+      // Handle individual sensor topics
       if (topic === 'biopod/bsf/sensors/temperature') {
         console.log('[MQTT Handler] 🌡️  BSF Temperature:', payload);
         await logSensorReading('bsf_temperature', payload.value, payload.unit, {
@@ -355,11 +356,33 @@ function initializeBsfHandlers(mqttClient) {
           device: payload.device
         });
       }
+      // ✅ CRITICAL: Handle fan status topic which includes sensor data
       else if (topic === 'biopod/bsf/status/fan') {
         console.log('[MQTT Handler] 🎛️  BSF Fan Status:', payload);
+        
+        // ✅ Save the sensor readings from fan status message
+        if (payload.temp !== null && payload.temp !== undefined) {
+          await logSensorReading('bsf_temperature', payload.temp, '°C', {
+            device: payload.device || 'BSF_001'
+          });
+        }
+        
+        if (payload.humidity !== null && payload.humidity !== undefined) {
+          await logSensorReading('bsf_humidity', payload.humidity, '%', {
+            device: payload.device || 'BSF_001'
+          });
+        }
+        
+        if (payload.mq135 !== null && payload.mq135 !== undefined) {
+          await logSensorReading('bsf_air_quality', payload.mq135, 'ppm', {
+            device: payload.device || 'BSF_001'
+          });
+        }
+        
+        // Log control action
         await logControlAction('fan_status_update', {
-          device: payload.device,
-          state: payload.state,
+          device: payload.device || 'BSF_001',
+          state: payload.fan,
           mode: payload.mode
         });
       }
@@ -374,6 +397,7 @@ function initializeBsfHandlers(mqttClient) {
   console.log('[MQTT BSF] ✅ BSF handlers attached to MQTT client');
   return true;
 }
+
 
 /**
  * Initialize generic MQTT handlers
@@ -403,11 +427,57 @@ async function logSensorReading(sensorType, value, unit, metadata = {}) {
     console.log(`[MQTT Handler] ✅ ${sensorType} logged: ${value}${unit}`);
     
     // Update current data
-    await updateCurrentData({
-      device: metadata.device || 'BSF_001',
-      [sensorType.replace('bsf_', '')]: value
-    });
+    // await updateCurrentData({
+    //   device: metadata.device || 'BSF_001',
+    //   [sensorType.replace('bsf_', '')]: value
+    // });
     
+    /**
+ * Update current BSF data
+ */
+async function updateCurrentData(data) {
+  try {
+    const db = await getDB();
+    const collection = db.collection('bsf_current_data');
+    
+    // ✅ FIXED: Build update object correctly
+    const updateObj = {
+      device: data.device || 'BSF_001',
+      timestamp: new Date(),
+      updatedAt: new Date()
+    };
+
+    // Add sensor values if they exist
+    if (data.temperature !== undefined && data.temperature !== null) {
+      updateObj.temperature = data.temperature;
+    }
+    if (data.humidity !== undefined && data.humidity !== null) {
+      updateObj.humidity = data.humidity;
+    }
+    if (data.air_quality !== undefined && data.air_quality !== null) {
+      updateObj.air_quality = data.air_quality;
+    }
+    if (data.fan_state !== undefined && data.fan_state !== null) {
+      updateObj.fan_state = data.fan_state;
+    }
+    if (data.fan_mode !== undefined && data.fan_mode !== null) {
+      updateObj.fan_mode = data.fan_mode;
+    }
+
+    const result = await collection.updateOne(
+      { device: updateObj.device },
+      { $set: updateObj },
+      { upsert: true }
+    );
+
+    console.log('[MQTT] ✅ Updated bsf_current_data:', updateObj);
+    return result;
+  } catch (error) {
+    console.error('[MQTT Handler] ❌ Error updating BSF current data:', error.message);
+  }
+}
+
+
     return result;
   } catch (error) {
     console.error(`[MQTT Handler] ❌ Error logging ${sensorType}:`, error.message);

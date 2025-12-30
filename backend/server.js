@@ -65,13 +65,11 @@ app.use('/api/alerts', alertRoutes);
 // MIDDLEWARE CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════
 
-app.use(cors({
-  origin: CORS_ORIGIN,
-  credentials: true
-}));
+const dashboardRoutes = require('./src/routes/dashboard-routes');
+app.use('/api/dashboard', dashboardRoutes);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+
 
 // Request logger
 app.use((req, res, next) => {
