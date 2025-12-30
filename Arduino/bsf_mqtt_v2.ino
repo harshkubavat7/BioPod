@@ -15,6 +15,9 @@ OPTION 3 CONTROL LOGIC:
 #include <ArduinoJson.h>
 #include <FS.h>
 #include <SPIFFS.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
 
 // ───────────────── WIFI ─────────────────
 const char* WIFI_SSID = "kamesh";
